@@ -10,8 +10,8 @@ TRAIN_STEPS_NUM = 100 # default 100
 USING_CPU = False # set False if having GPU
 BATCH_SIZE = 32 # default 1
 SAVE_PATH = 'save/'
-LEN = 100
-PG = 1000
+LEN = 100 # set the length for training
+PG = 1000 # the maximum length of training seqs for policy gradient
 EMB = 'emb_mapping.pkl'
 ST, ED = '|', '^'
 STI, EDI = 0, 1
@@ -20,8 +20,10 @@ STI, EDI = 0, 1
 def embedding(corpus, emb=EMB):
     with open(corpus, 'r') as f:
         mapping_dic = set(f.read())
-    if ST in mapping_dic:
+    # start token
+	if ST in mapping_dic:
         mapping_dic.remove(ST)
+	# end token
     if ED in mapping_dic:
         mapping_dic.remove(ED)
     mapping_dic = [ST, ED] + list(mapping_dic)
@@ -45,7 +47,8 @@ def inverse_mapping(idex, inverse_mapping_dic, argmax=False):
     if argmax:
         idex = np.argmax(idex, axis=-1)
     char = [inverse_mapping_dic.get(i, None) for i in idex]
-    tx = ''.join(c for c in char if c)
+    # text
+	tx = ''.join(c for c in char if c)
     return tx
 
 def scope_variables(scope):
@@ -73,7 +76,8 @@ class WGAN_RL(object):
     def get_prior_dim(self, batch_size):
         return np.random.normal(size=(batch_size, self.prior_dim))
 
-    def random_W(self, name, shape, cpu_or_gpu='gpu', trainable=True):
+    # the project martix
+	def random_W(self, name, shape, cpu_or_gpu='gpu', trainable=True):
         if cpu_or_gpu == 'gpu':
             on_gpu = True
         elif cpu_or_gpu == 'cpu':
@@ -106,7 +110,8 @@ class WGAN_RL(object):
             batch_size = tf.shape(self.l_)[0]
             supervise_train = tf.concat([tf.zeros_like(self.t_[:, :1]), self.t_[:, :-1]], axis=1)
             supervise_train = tf.one_hot(supervise_train, self.words_num)
-            spf = tf.contrib.seq2seq.simple_decoder_fn_train(encoder_state)
+            # supervised training fn function (tensorflow)
+			spf = tf.contrib.seq2seq.simple_decoder_fn_train(encoder_state)
             LENGTH = tf.ones((batch_size,), 'int32') * self.tl_
             super_anser, s, t = tf.contrib.seq2seq.dynamic_rnn_decoder(cell=cell, inputs=supervise_train, decoder_fn=spf, sequence_length=LENGTH)
             super_anser = tf.einsum('ijk,kl->ijl', super_anser, output_W)
@@ -147,10 +152,14 @@ class WGAN_RL(object):
 
     def D_train(self, real, generate, DW):
         with tf.variable_scope('loss/discriminator'):
-            D_OP = tf.train.RMSPropOptimizer(1e-4)
-            RV = -tf.reduce_mean(real)
-            GV = tf.reduce_mean(generate)
+            # build opt
+			D_OP = tf.train.RMSPropOptimizer(1e-4)
+            # real data
+			RV = -tf.reduce_mean(real)
+            # generated data
+			GV = tf.reduce_mean(generate)
             DLoss = RV + GV
+			# regularization terms
             with tf.variable_scope('REGU'):
                 D_REGU = sum([tf.nn.l2_loss(w) for w in DW]) * 1e-4
             total_loss = DLoss + D_REGU
@@ -161,18 +170,23 @@ class WGAN_RL(object):
 
     def G_train(self, result, rewards, softmax_value, GW):
         with tf.variable_scope('loss/generator'):
-            R_OP = tf.train.GradientDescentOptimizer(1e-3)
+            # reward opt
+			R_OP = tf.train.GradientDescentOptimizer(1e-3)
             G_OP = tf.train.RMSPropOptimizer(1e-4)
             result = tf.one_hot(result, self.words_num)
             softmax_value = tf.clip_by_value(softmax_value * result, 1e-15, 1)
-            MCS = tf.Variable(tf.zeros((PG,)))
+            # expected reward by MCS
+			MCS = tf.Variable(tf.zeros((PG,)))
             reward = rewards - MCS[:tf.shape(rewards)[1]]
             threshold = tf.reduce_mean(tf.abs(reward))
-            EOP = R_OP.minimize(
+            # expected
+			EOP = R_OP.minimize(
                 threshold, var_list=[MCS])
             reward = tf.expand_dims(tf.cumsum(reward, axis=1, reverse=True), -1)
-            GR = tf.log(softmax_value) * reward
-            GR = tf.reduce_mean(GR)
+            # reward
+			GR = tf.log(softmax_value) * reward
+            # mean reward
+			GR = tf.reduce_mean(GR)
             GLoss = -GR
             with tf.variable_scope('REGU'):
                 G_REGU = sum([tf.nn.l2_loss(w) for w in GW]) * 1e-5
