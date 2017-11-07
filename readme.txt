@@ -1,9 +1,9 @@
-�����礧�{���X�ϥ�tensorflow 1.0�Ppython 2.7�Ӭ[�c�P��@�����ҫ��C
-�ѩ�tensorflow���䴩�W�U�ۮe�A�]���ϥΫDtensorflow 1.0�������i��|
-�L�k����C�{���X�w�]�ϥ�GPU�Ӱ���A�Y�LGPU�h�i�N�Ѽ�"USING_CPU"�]�m
-��"True"(USING_CPU = True)�K�i�ϥ�CPU�ӹB��N�X�C�t�~�A�����q�ƼƭȡA
-�i�i�@�B�}��tensorboard�d�\���C���¡C
+此實驗之程式碼使用tensorflow 1.0與python 2.7來架構與實作相關模型。
+由於tensorflow不支援上下相容，因此使用非tensorflow 1.0的版本可能會
+無法執行。程式碼預設使用GPU來執行，若無GPU則可將參數"USING_CPU"設置
+成"True"(USING_CPU = True)便可使用CPU來運行代碼。另外，相關量化數值，
+可進一步開啟tensorboard查閱之。
 
-SeqGAN ��@�N�X:
+SeqGAN 原作代碼:
 https://github.com/LantaoYu/SeqGAN
 
