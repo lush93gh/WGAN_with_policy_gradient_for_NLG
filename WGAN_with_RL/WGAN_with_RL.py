@@ -40,7 +40,8 @@ def mapping(corpus, mapping_dic, batch_size=10, trian_len=50):
     while True:
         batch_i = np.random.choice(start_i, size=(trian_len,), replace=False)
         lines = [corpus_content[i:i + trian_len] for i in batch_i]
-        tkn = [[mapping_dic[i] for i in tx] for tx in lines]
+        # tokens
+		tkn = [[mapping_dic[i] for i in tx] for tx in lines]
         yield np.asarray(tkn)
 
 def inverse_mapping(idex, inverse_mapping_dic, argmax=False):
@@ -57,22 +58,28 @@ def scope_variables(scope):
 # define WGAN model
 class WGAN_RL(object):
     def __init__(self, sess, words_num, D_times=None, using_cpu=False, sava_path='save/', prior_dim=100):
-        self.tl_ = tf.placeholder(dtype='int32', shape=())
-        self.t_ = tf.placeholder(dtype='int32', shape=(None, None))
-        self.l_ = tf.placeholder(dtype='float32', shape=(None, prior_dim))
+        # text lens
+		self.tl_ = tf.placeholder(dtype='int32', shape=())
+        # text
+		self.t_ = tf.placeholder(dtype='int32', shape=(None, None))
+        # latent dimensions
+		self.l_ = tf.placeholder(dtype='float32', shape=(None, prior_dim))
         self.time = tf.Variable(0, name='time')
-        self.for_sam = tf.placeholder(dtype='bool', shape=())
+        # sample (bool)
+		self.for_sam = tf.placeholder(dtype='bool', shape=())
         self.sess = sess
         self.words_num = words_num
-        self.prior_dim = prior_dim
+        # the dimensions of prior
+		self.prior_dim = prior_dim
         self.save_path = sava_path
         self.using_cpu = using_cpu
         self.weights = []
-        self.D_times = D_times
+        self.D_times = D_times # the times(num) for training Discriminator
     @property
     def current_time(self):
         return self.sess.run(self.time)
 
+	# generate the prior vector for generator
     def get_prior_dim(self, batch_size):
         return np.random.normal(size=(batch_size, self.prior_dim))
 
@@ -103,7 +110,8 @@ class WGAN_RL(object):
             def proWB(i, activation=tf.tanh):
                 W = self.random_W('rnn_proj_%d_W' % i, (self.prior_dim, hidden_size))
                 b = self.random_W('rnn_proj_%d_b' % i, (hidden_size,))
-                p = activation(tf.matmul(self.l_, W) + b)
+                # projection
+				p = activation(tf.matmul(self.l_, W) + b)
                 return p
 
             encoder_state = tuple(proWB(i) for i in range(rnn_stack))
@@ -113,12 +121,14 @@ class WGAN_RL(object):
             # supervised training fn function (tensorflow)
 			spf = tf.contrib.seq2seq.simple_decoder_fn_train(encoder_state)
             LENGTH = tf.ones((batch_size,), 'int32') * self.tl_
-            super_anser, s, t = tf.contrib.seq2seq.dynamic_rnn_decoder(cell=cell, inputs=supervise_train, decoder_fn=spf, sequence_length=LENGTH)
+            # s, t can be ignore
+			super_anser, s, t = tf.contrib.seq2seq.dynamic_rnn_decoder(cell=cell, inputs=supervise_train, decoder_fn=spf, sequence_length=LENGTH)
             super_anser = tf.einsum('ijk,kl->ijl', super_anser, output_W)
             superLoss = tf.contrib.seq2seq.sequence_loss(logits=super_anser, targets=self.t_, weights=tf.ones((batch_size, self.tl_)))
             superLoss = tf.reduce_mean(superLoss)
             tf.get_variable_scope().reuse_variables()
-            embs = tf.eye(self.words_num)
+            # embeddings
+			embs = tf.eye(self.words_num)
             sampling = tf.contrib.seq2seq.simple_decoder_fn_inference(
                                                 output_fn=output_fn,
                                                 encoder_state=encoder_state,
@@ -165,14 +175,16 @@ class WGAN_RL(object):
             total_loss = DLoss + D_REGU
             tf.summary.scalar('D_loss', total_loss + 350)
             D_train = D_OP.minimize(total_loss, var_list=DW)
-            clip_D = [p.assign(tf.clip_by_value(p, -1, 1)) for p in DW]
+            # weights clipping
+			clip_D = [p.assign(tf.clip_by_value(p, -1, 1)) for p in DW]
         return D_train, clip_D
 
     def G_train(self, result, rewards, softmax_value, GW):
         with tf.variable_scope('loss/generator'):
             # reward opt
 			R_OP = tf.train.GradientDescentOptimizer(1e-3)
-            G_OP = tf.train.RMSPropOptimizer(1e-4)
+            # generator opt
+			G_OP = tf.train.RMSPropOptimizer(1e-4)
             result = tf.one_hot(result, self.words_num)
             softmax_value = tf.clip_by_value(softmax_value * result, 1e-15, 1)
             # expected reward by MCS
@@ -183,14 +195,15 @@ class WGAN_RL(object):
 			EOP = R_OP.minimize(
                 threshold, var_list=[MCS])
             reward = tf.expand_dims(tf.cumsum(reward, axis=1, reverse=True), -1)
-            # reward
+            # generator rewards
 			GR = tf.log(softmax_value) * reward
             # mean reward
 			GR = tf.reduce_mean(GR)
             GLoss = -GR
             with tf.variable_scope('REGU'):
                 G_REGU = sum([tf.nn.l2_loss(w) for w in GW]) * 1e-5
-            G_ALL = GLoss + G_REGU
+            # loss + regularization
+			G_ALL = GLoss + G_REGU
             G_train = G_OP.minimize(G_ALL, var_list=GW)
             G_train = tf.group(G_train, EOP)
         return G_train
@@ -198,19 +211,24 @@ class WGAN_RL(object):
     def build(self, REGU=1e-4):
         softmax_ans, sampling_seq, superLoss = self.G()
         real = self.D(self.t_)
-        gene = self.D(sampling_seq, reuse=True)
-        GWs = scope_variables('generator')
+        # generated sentences
+		gene = self.D(sampling_seq, reuse=True)
+        # generator params
+		GWs = scope_variables('generator')
+		# discriminator params
         DWs = scope_variables('discriminator')
         self.do_sampling = sampling_seq
         D_train, clip_D = self.D_train(real, gene, DWs)
         G_train = self.G_train(sampling_seq, gene, softmax_ans, GWs)
         LR = 10000. / (10000. + tf.cast(self.time, 'float32'))
-        LR *= 1e-3
+        # learning rate
+		LR *= 1e-3
         OPT = tf.train.AdamOptimizer(LR)
         super_train = OPT.minimize(superLoss)
         G_train = tf.group(G_train, super_train)
         count = self.time.assign(self.time + 1)
-        switch = tf.cond(tf.equal(tf.mod(self.time, self.D_times), 0), lambda: G_train, lambda: D_train)
+        # decide the phase of discriminator and generator
+		switch = tf.cond(tf.equal(tf.mod(self.time, self.D_times), 0), lambda: G_train, lambda: D_train)
         self.WGAN_train = tf.group(switch, count)
         self.clip_D = clip_D
         self.summary_writer = tf.summary.FileWriter(self.save_path, self.sess.graph)
